@@ -483,7 +483,7 @@ function App() {
                     <p className="text-sm font-semibold text-orange-700 mb-3">🎵 듣기 옵션</p>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => handleSpeak(getTextForSpeech(index), 0.5)}
+                        onClick={() => handleSpeak(getTextForSpeech(index), 0.7)}
                         disabled={!getTextForSpeech(index)}
                         className="flex-1 bg-orange-300 hover:bg-orange-400 disabled:bg-gray-300 text-white font-bold py-2 px-3 rounded-lg transition-colors duration-200 text-sm"
                       >
