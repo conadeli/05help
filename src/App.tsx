@@ -508,6 +508,30 @@ function App() {
                           </button>
                         ))}
                       </div>
+                      <div className="mt-3">
+                        <input
+                          type="text"
+                          placeholder="추가 뜻을 직접 입력하세요"
+                          className="w-full px-3 py-2 border-2 border-green-200 rounded-lg text-sm focus:outline-none focus:border-green-400 transition-colors"
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              const input = e.target as HTMLInputElement;
+                              const newMeaning = input.value.trim();
+                              if (newMeaning && !section.meanings.includes(newMeaning)) {
+                                const updatedSections = [...sections];
+                                updatedSections[index] = {
+                                  ...updatedSections[index],
+                                  meanings: [...updatedSections[index].meanings, newMeaning],
+                                  meaning: [...updatedSections[index].meanings, newMeaning].join(' / ')
+                                };
+                                setSections(updatedSections);
+                                input.value = '';
+                              }
+                            }
+                          }}
+                        />
+                        <p className="text-xs text-green-600 mt-1">Enter를 눌러서 뜻을 추가하세요</p>
+                      </div>
                     </div>
                   )}
 
