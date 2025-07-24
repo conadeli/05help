@@ -1,16 +1,72 @@
 import React, { useState, useRef } from 'react';
-import { Volume2, VolumeX, Download, RotateCcw, Upload, Trash2, Mic } from 'lucide-react';
+import { Volume2, VolumeX, Download, RotateCcw, Upload, Trash2 } from 'lucide-react';
 import html2canvas from 'html2canvas';
+
+// 축하 효과 컴포넌트
+const CelebrationEffect: React.FC<{ show: boolean; onComplete: () => void }> = ({ show, onComplete }) => {
+  React.useEffect(() => {
+    if (show) {
+      const timer = setTimeout(() => {
+        onComplete();
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [show, onComplete]);
+
+  if (!show) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
+      {/* 배경 오버레이 */}
+      <div className="absolute inset-0 bg-black bg-opacity-20 animate-pulse" />
+      
+      {/* 중앙 축하 메시지 */}
+      <div className="relative z-10 text-center animate-bounce">
+        <div className="text-6xl mb-4 animate-spin">🎉</div>
+        <div className="text-4xl font-bold text-yellow-400 drop-shadow-lg animate-pulse">
+          잘했어요!
+        </div>
+        <div className="text-2xl text-white drop-shadow-lg mt-2">
+          Great Job! 🌟
+        </div>
+      </div>
+      
+      {/* 떨어지는 이모지들 */}
+      {[...Array(20)].map((_, i) => (
+        <div
+          key={i}
+          className="absolute text-4xl animate-bounce"
+          style={{
+            left: `${Math.random() * 100}%`,
+            top: `${Math.random() * 100}%`,
+            animationDelay: `${Math.random() * 2}s`,
+            animationDuration: `${1 + Math.random() * 2}s`
+          }}
+        >
+          {['⭐', '🎊', '🎈', '🌟', '✨', '🎁', '🏆', '👏'][Math.floor(Math.random() * 8)]}
+        </div>
+      ))}
+      
+      {/* 원형 파동 효과 */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="w-32 h-32 border-4 border-yellow-400 rounded-full animate-ping opacity-75" />
+        <div className="absolute w-48 h-48 border-4 border-blue-400 rounded-full animate-ping opacity-50" style={{ animationDelay: '0.5s' }} />
+        <div className="absolute w-64 h-64 border-4 border-green-400 rounded-full animate-ping opacity-25" style={{ animationDelay: '1s' }} />
+      </div>
+    </div>
+  );
+};
 
 interface SectionData {
   word: string;
   meaning: string;
   meanings: string[];
   image: string | null;
+  description: string;
 }
 
 // 실제 번역 API 함수
-const translateText = async (text: string, isKorean: boolean = false): Promise<string> => {
+const translateText = async (text: string, isKorean: boolean = false): Promise<string | string[]> => {
   try {
     // 문장인지 단어인지 판단 (공백이 있거나 길이가 긴 경우 문장으로 간주)
     const isSentence = text.trim().includes(' ') || text.trim().length > 15;
@@ -221,10 +277,67 @@ const translateText = async (text: string, isKorean: boolean = false): Promise<s
 function App() {
   const [studentName, setStudentName] = useState<string>('');
   const [sections, setSections] = useState<SectionData[]>(
-    Array(5).fill(null).map(() => ({ word: '', meaning: '', meanings: [], image: null }))
+    Array(5).fill(null).map(() => ({ word: '', meaning: '', meanings: [], image: null, description: '' }))
   );
+  const [showCelebration, setShowCelebration] = useState<boolean>(false);
+  const [isCapturing, setIsCapturing] = useState<boolean>(false);
+  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const pageRef = useRef<HTMLDivElement>(null);
   const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // 음성 읽기 기능
+  const speakText = (text: string, rate: number = 1) => {
+    if (!text.trim()) return;
+    
+    // 기존 음성 중지
+    window.speechSynthesis.cancel();
+    
+    // 음성 목록을 가져와서 미국 여자 목소리 찾기
+    const voices = window.speechSynthesis.getVoices();
+    let selectedVoice = null;
+    
+    // 미국 여자 목소리 우선순위로 찾기
+    const preferredVoices = [
+      'Microsoft Zira - English (United States)',
+      'Google US English Female',
+      'Alex',
+      'Samantha'
+    ];
+    
+    for (const preferred of preferredVoices) {
+      selectedVoice = voices.find(voice => 
+        voice.name.includes(preferred) || 
+        (voice.lang.includes('en-US') && voice.name.toLowerCase().includes('female'))
+      );
+      if (selectedVoice) break;
+    }
+    
+    // 미국 영어 목소리가 없으면 영어 목소리 중 아무거나
+    if (!selectedVoice) {
+      selectedVoice = voices.find(voice => voice.lang.startsWith('en'));
+    }
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
+    utterance.rate = rate;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+    
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+    }
+    
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const stopSpeaking = () => {
+    window.speechSynthesis.cancel();
+    setIsSpeaking(false);
+  };
 
   const handleWordChange = (index: number, word: string) => {
     const newSections = [...sections];
@@ -263,59 +376,16 @@ function App() {
     }
   };
 
-  const handleSpeak = (text: string, rate: number) => {
-    if (!text.trim()) return;
-    
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    
-    // 미국 여성 목소리 강제 설정
-    const setVoice = () => {
-      const voices = window.speechSynthesis.getVoices();
-      const femaleVoice = voices.find(voice => 
-        voice.lang.includes('en-US') && 
-        (voice.name.toLowerCase().includes('female') || 
-         voice.name.toLowerCase().includes('woman') ||
-         voice.name.toLowerCase().includes('samantha') || 
-         voice.name.toLowerCase().includes('karen') || 
-         voice.name.toLowerCase().includes('moira') ||
-         voice.name.toLowerCase().includes('susan') ||
-         voice.name.toLowerCase().includes('allison'))
-      ) || voices.find(voice => 
-        voice.lang.includes('en-US') && voice.name.toLowerCase().includes('us')
-      ) || voices.find(voice => voice.lang.includes('en-US'));
-      
-      if (femaleVoice) {
-        utterance.voice = femaleVoice;
-      }
+  const removeMeaning = (sectionIndex: number, meaningIndex: number) => {
+    const newSections = [...sections];
+    const updatedMeanings = [...newSections[sectionIndex].meanings];
+    updatedMeanings.splice(meaningIndex, 1);
+    newSections[sectionIndex] = {
+      ...newSections[sectionIndex],
+      meanings: updatedMeanings,
+      meaning: updatedMeanings.join(' / ')
     };
-    
-    // 음성이 로드되지 않았을 경우를 대비
-    if (window.speechSynthesis.getVoices().length === 0) {
-      window.speechSynthesis.addEventListener('voiceschanged', setVoice, { once: true });
-    } else {
-      setVoice();
-    }
-    
-    utterance.lang = 'en-US';
-    utterance.rate = rate;
-    utterance.pitch = 1.1; // 약간 높은 톤으로 젊은 느낌
-    utterance.volume = 1;
-    window.speechSynthesis.speak(utterance);
-  };
-
-  // 음성 재생을 위한 텍스트 결정 함수
-  const getTextForSpeech = (index: number): string => {
-    const section = sections[index];
-    if (!section.word.trim()) return '';
-    
-    // 한국어 입력이고 영어 번역 결과가 있으면 영어를 읽기
-    if (isKoreanText(section.word) && section.meaning) {
-      return section.meaning;
-    }
-    
-    // 영어 입력이면 원본 영어를 읽기
-    return section.word;
+    setSections(newSections);
   };
 
   const handleImageUpload = (index: number, file: File) => {
@@ -349,20 +419,19 @@ function App() {
     setSections(newSections);
   };
 
-  const removeMeaning = (sectionIndex: number, meaningIndex: number) => {
+  const handleDescriptionChange = (index: number, description: string) => {
     const newSections = [...sections];
-    const updatedMeanings = [...newSections[sectionIndex].meanings];
-    updatedMeanings.splice(meaningIndex, 1);
-    newSections[sectionIndex] = {
-      ...newSections[sectionIndex],
-      meanings: updatedMeanings,
-      meaning: updatedMeanings.join(' / ')
-    };
+    newSections[index] = { ...newSections[index], description };
     setSections(newSections);
   };
 
   const handleScreenshot = async () => {
     if (!pageRef.current) return;
+    
+    setIsCapturing(true);
+    
+    // 잠시 기다려서 버튼들이 숨겨지도록 함
+    await new Promise(resolve => setTimeout(resolve, 100));
     
     try {
       const canvas = await html2canvas(pageRef.current, {
@@ -377,6 +446,8 @@ function App() {
       link.click();
     } catch (error) {
       console.error('스크린샷 저장 중 오류가 발생했습니다:', error);
+    } finally {
+      setIsCapturing(false);
     }
   };
 
@@ -415,12 +486,15 @@ function App() {
   }, [sections]);
 
   const handleReset = () => {
-    setSections(Array(5).fill(null).map(() => ({ word: '', meaning: '', meanings: [], image: null })));
-    window.speechSynthesis.cancel();
+    setSections(Array(5).fill(null).map(() => ({ word: '', meaning: '', meanings: [], image: null, description: '' })));
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-4">
+      <CelebrationEffect 
+        show={showCelebration} 
+        onComplete={() => setShowCelebration(false)} 
+      />
       <div ref={pageRef} className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
@@ -486,81 +560,94 @@ function App() {
                     <button
                       onClick={() => handleMeaningClick(index)}
                       disabled={!section.word.trim()}
-                      className="flex-1 bg-gradient-to-r from-green-400 to-green-500 hover:from-green-500 hover:to-green-600 disabled:from-gray-300 disabled:to-gray-400 text-white font-bold py-3 px-4 rounded-lg transition-all duration-200 transform hover:scale-105 disabled:scale-100 shadow-lg"
+                      className={`flex-1 bg-gradient-to-r from-green-400 to-green-500 hover:from-green-500 hover:to-green-600 disabled:from-gray-300 disabled:to-gray-400 text-white font-bold py-3 px-4 rounded-lg transition-all duration-200 transform hover:scale-105 disabled:scale-100 shadow-lg ${isCapturing ? 'hidden' : ''}`}
                     >
                       💡 {isKoreanText(section.word) ? '영어로 번역' : '뜻 보기'}
                     </button>
                   </div>
 
-                  {section.meaning && (
-                    <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
-                      <p className="text-sm font-semibold text-green-700 mb-2">
-                        📖 {isKoreanText(section.word) ? '영어' : '뜻'}: (클릭하면 제거됩니다)
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {section.meanings.map((meaning, meaningIndex) => (
+                  {/* 영어 읽기 버튼들 */}
+                  {section.word && !isKoreanText(section.word) && (
+                    <div className={`bg-blue-50 border-2 border-blue-200 rounded-xl p-4 ${isCapturing ? 'hidden' : ''}`}>
+                      <p className="text-sm font-semibold text-blue-700 mb-3">🔊 영어 듣기</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => speakText(section.word, 0.7)}
+                          disabled={isSpeaking}
+                          className="flex-1 bg-blue-400 hover:bg-blue-500 disabled:bg-gray-400 text-white font-medium py-2 px-3 rounded-lg transition-colors text-sm"
+                        >
+                          🐌 천천히
+                        </button>
+                        <button
+                          onClick={() => speakText(section.word, 1)}
+                          disabled={isSpeaking}
+                          className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white font-medium py-2 px-3 rounded-lg transition-colors text-sm"
+                        >
+                          🗣️ 일반
+                        </button>
+                        <button
+                          onClick={() => speakText(section.word, 1.3)}
+                          disabled={isSpeaking}
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-2 px-3 rounded-lg transition-colors text-sm"
+                        >
+                          🚀 빠르게
+                        </button>
+                        {isSpeaking && (
                           <button
-                            key={meaningIndex}
-                            onClick={() => removeMeaning(index, meaningIndex)}
-                            className="bg-green-100 hover:bg-red-100 hover:line-through text-green-800 hover:text-red-800 px-3 py-1 rounded-lg text-sm font-medium transition-all duration-200 border border-green-300 hover:border-red-300"
+                            onClick={stopSpeaking}
+                            className="bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-3 rounded-lg transition-colors text-sm"
                           >
-                            {meaning}
+                            <VolumeX size={16} />
                           </button>
-                        ))}
-                      </div>
-                      <div className="mt-3">
-                        <input
-                          type="text"
-                          placeholder="추가 뜻을 직접 입력하세요"
-                          className="w-full px-3 py-2 border-2 border-green-200 rounded-lg text-sm focus:outline-none focus:border-green-400 transition-colors"
-                          onKeyPress={(e) => {
-                            if (e.key === 'Enter') {
-                              const input = e.target as HTMLInputElement;
-                              const newMeaning = input.value.trim();
-                              if (newMeaning && !section.meanings.includes(newMeaning)) {
-                                const updatedSections = [...sections];
-                                updatedSections[index] = {
-                                  ...updatedSections[index],
-                                  meanings: [...updatedSections[index].meanings, newMeaning],
-                                  meaning: [...updatedSections[index].meanings, newMeaning].join(' / ')
-                                };
-                                setSections(updatedSections);
-                                input.value = '';
-                              }
-                            }
-                          }}
-                        />
-                        <p className="text-xs text-green-600 mt-1">Enter를 눌러서 뜻을 추가하세요</p>
+                        )}
                       </div>
                     </div>
                   )}
 
-                  <div className="bg-orange-50 rounded-xl p-4">
-                    <p className="text-sm font-semibold text-orange-700 mb-3">🎵 듣기 옵션</p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleSpeak(getTextForSpeech(index), 0.5)}
-                        disabled={!getTextForSpeech(index)}
-                        className="flex-1 bg-orange-300 hover:bg-orange-400 disabled:bg-gray-300 text-white font-bold py-2 px-3 rounded-lg transition-colors duration-200 text-sm"
-                      >
-                        🐌 천천히
-                      </button>
-                      <button
-                        onClick={() => handleSpeak(getTextForSpeech(index), 1)}
-                        disabled={!getTextForSpeech(index)}
-                        className="flex-1 bg-orange-400 hover:bg-orange-500 disabled:bg-gray-300 text-white font-bold py-2 px-3 rounded-lg transition-colors duration-200 text-sm"
-                      >
-                        🚶 일반
-                      </button>
-                      <button
-                        onClick={() => handleSpeak(getTextForSpeech(index), 1.3)}
-                        disabled={!getTextForSpeech(index)}
-                        className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 text-white font-bold py-2 px-3 rounded-lg transition-colors duration-200 text-sm"
-                      >
-                        🏃 빠르게
-                      </button>
+                  {section.meaning && (
+                    <div className={`bg-green-50 border-2 border-green-200 rounded-xl p-4 ${isCapturing ? 'pb-2' : ''}`}>
+                      <p className="text-sm font-semibold text-green-700 mb-2">
+                        📖 {isKoreanText(section.word) ? '영어' : '뜻'}: {!isCapturing && '(클릭하면 제거됩니다)'}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {section.meanings.map((meaning, meaningIndex) => (
+                          <div
+                            key={meaningIndex}
+                            onClick={!isCapturing ? () => removeMeaning(index, meaningIndex) : undefined}
+                            className={`bg-green-100 text-green-800 px-3 py-1 rounded-lg text-sm font-medium border border-green-300 ${!isCapturing ? 'hover:bg-red-100 hover:line-through hover:text-red-800 hover:border-red-300 cursor-pointer transition-all duration-200' : ''}`}
+                          >
+                            {meaning}
+                          </div>
+                        ))}
+                      </div>
+                      {!isCapturing && (
+                        <div className="mt-3">
+                          <input
+                            type="text"
+                            placeholder="추가 뜻을 직접 입력하세요"
+                            className="w-full px-3 py-2 border-2 border-green-200 rounded-lg text-sm focus:outline-none focus:border-green-400 transition-colors"
+                            onKeyPress={(e) => {
+                              if (e.key === 'Enter') {
+                                const input = e.target as HTMLInputElement;
+                                const newMeaning = input.value.trim();
+                                if (newMeaning && !section.meanings.includes(newMeaning)) {
+                                  const updatedSections = [...sections];
+                                  updatedSections[index] = {
+                                    ...updatedSections[index],
+                                    meanings: [...updatedSections[index].meanings, newMeaning],
+                                    meaning: [...updatedSections[index].meanings, newMeaning].join(' / ')
+                                  };
+                                  setSections(updatedSections);
+                                  input.value = '';
+                                }
+                              }
+                            }}
+                          />
+                          <p className="text-xs text-green-600 mt-1">Enter를 눌러서 뜻을 추가하세요</p>
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Right Side - Image Upload */}
@@ -569,15 +656,21 @@ function App() {
                     <p className="text-sm font-semibold text-purple-700 mb-3">🖼️ 이미지 추가</p>
                     {!section.image ? (
                       <div 
-                        className="border-3 border-dashed border-purple-300 rounded-xl p-8 text-center bg-white hover:bg-purple-25 transition-colors cursor-pointer"
+                        className={`border-3 border-dashed border-purple-300 rounded-xl p-8 text-center bg-white transition-colors ${!isCapturing ? 'hover:bg-purple-25 cursor-pointer' : ''}`}
                         onPaste={(e) => handleImagePaste(index, e)}
-                        onClick={() => fileInputRefs.current[index]?.click()}
+                        onClick={!isCapturing ? () => fileInputRefs.current[index]?.click() : undefined}
                         tabIndex={0}
                       >
                         <Upload className="mx-auto mb-2 text-purple-400" size={32} />
                         <p className="text-purple-600 font-medium">
-                          클릭해서 파일 선택하거나<br />
-                          Ctrl+V로 이미지를 붙여넣기 하세요
+                          {!isCapturing ? (
+                            <>
+                              클릭해서 파일 선택하거나<br />
+                              Ctrl+V로 이미지를 붙여넣기 하세요
+                            </>
+                          ) : (
+                            '이미지 영역'
+                          )}
                         </p>
                         <input
                           ref={(el) => fileInputRefs.current[index] = el}
@@ -597,14 +690,30 @@ function App() {
                           alt="업로드된 이미지"
                           className="w-full h-64 object-cover rounded-xl shadow-md"
                         />
-                        <button
-                          onClick={() => handleImageDelete(index)}
-                          className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white p-2 rounded-full shadow-lg transition-colors"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        {!isCapturing && (
+                          <button
+                            onClick={() => handleImageDelete(index)}
+                            className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white p-2 rounded-full shadow-lg transition-colors"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
                       </div>
                     )}
+                  </div>
+
+                  {/* 이미지 설명 입력란 */}
+                  <div className="bg-yellow-50 rounded-xl p-4">
+                    <label className="block text-sm font-semibold text-yellow-700 mb-2">
+                      📝 메모
+                    </label>
+                    <textarea
+                      value={section.description}
+                      onChange={(e) => handleDescriptionChange(index, e.target.value)}
+                      placeholder="이미지에 대한 설명이나 학습 포인트를 적어주세요"
+                      className="w-full px-3 py-2 border-2 border-yellow-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 transition-colors resize-none"
+                      rows={3}
+                    />
                   </div>
                 </div>
               </div>
@@ -613,21 +722,24 @@ function App() {
         </div>
 
         {/* Bottom Controls */}
-        <div className="flex justify-center gap-4 bg-white rounded-2xl shadow-lg p-6 border-2 border-blue-100">
-          <button
-            onClick={handleScreenshot}
-            className="flex items-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg"
-          >
-            <Download size={20} />
-            📸 {studentName ? `${studentName}_` : ''}영어학습 저장
-          </button>
-          <button
-            onClick={handleReset}
-            className="flex items-center gap-2 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg"
-          >
-            <RotateCcw size={20} />
-            🔄 리셋
-          </button>
+        <div className={`space-y-6 ${isCapturing ? 'hidden' : ''}`}>
+          {/* 저장/리셋 버튼들 */}
+          <div className="flex justify-center gap-4 bg-white rounded-2xl shadow-lg p-6 border-2 border-blue-100">
+            <button
+              onClick={handleScreenshot}
+              className="flex items-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg"
+            >
+              <Download size={20} />
+              📸 {studentName ? `${studentName}_` : ''}영어학습 저장
+            </button>
+            <button
+              onClick={handleReset}
+              className="flex items-center gap-2 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg"
+            >
+              <RotateCcw size={20} />
+              🔄 리셋
+            </button>
+          </div>
         </div>
       </div>
     </div>
