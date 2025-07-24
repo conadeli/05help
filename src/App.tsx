@@ -282,9 +282,43 @@ function App() {
   const [showCelebration, setShowCelebration] = useState<boolean>(false);
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
-  const [focusedSection, setFocusedSection] = useState<number | null>(null);
+  const [activeSection, setActiveSection] = useState<number | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  // 붙여넣기 이벤트 처리
+  React.useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      if (activeSection !== null) {
+        const items = e.clipboardData?.items;
+        if (items) {
+          for (let i = 0; i < items.length; i++) {
+            if (items[i].type.startsWith('image/')) {
+              e.preventDefault();
+              const file = items[i].getAsFile();
+              if (file) {
+                handleImageUpload(activeSection, file);
+              }
+              break;
+            }
+          }
+        }
+      }
+    };
+
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, [activeSection]);
+
+  // 섹션 클릭 핸들러
+  const handleSectionClick = (index: number) => {
+    setActiveSection(index);
+    // 섹션에 포커스 주기
+    if (sectionRefs.current[index]) {
+      sectionRefs.current[index]?.focus();
+    }
+  };
 
   // 음성 읽기 기능
   const speakText = (text: string, rate: number = 1) => {
@@ -453,6 +487,7 @@ function App() {
   };
 
   const handleImagePaste = (index: number, e: React.ClipboardEvent) => {
+    e.preventDefault();
     const items = e.clipboardData.items;
     for (let i = 0; i < items.length; i++) {
       if (items[i].type.startsWith('image/')) {
@@ -503,40 +538,6 @@ function App() {
     }
   };
 
-  // 전역 Ctrl+V 이벤트 리스너 추가
-  React.useEffect(() => {
-    const handleGlobalPaste = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === 'v') {
-        // 포커스된 섹션이 있으면 그 섹션에, 없으면 첫 번째 빈 섹션에
-        const targetIndex = focusedSection !== null ? focusedSection : sections.findIndex(section => !section.image);
-        if (targetIndex !== -1) {
-          // 클립보드에서 이미지 가져오기
-          navigator.clipboard.read().then(items => {
-            for (const item of items) {
-              if (item.types.includes('image/png') || item.types.includes('image/jpeg')) {
-                item.getType('image/png').then(blob => {
-                  const file = new File([blob], 'pasted-image.png', { type: 'image/png' });
-                  handleImageUpload(targetIndex, file);
-                }).catch(() => {
-                  item.getType('image/jpeg').then(blob => {
-                    const file = new File([blob], 'pasted-image.jpg', { type: 'image/jpeg' });
-                    handleImageUpload(targetIndex, file);
-                  });
-                });
-                break;
-              }
-            }
-          }).catch(() => {
-            // 클립보드 API가 지원되지 않는 경우 기존 방식 사용
-          });
-        }
-      }
-    };
-
-    document.addEventListener('keydown', handleGlobalPaste);
-    return () => document.removeEventListener('keydown', handleGlobalPaste);
-  }, [sections, focusedSection]);
-
   const handleReset = () => {
     setSections(Array(5).fill(null).map(() => ({ word: '', meaning: '', meanings: [], image: null, description: '' })));
   };
@@ -584,9 +585,23 @@ function App() {
         {/* Learning Sections */}
         <div className="space-y-6 mb-8">
           {sections.map((section, index) => (
-            <div key={index} className="bg-white rounded-2xl shadow-lg p-6 border-2 border-blue-100">
+            <div 
+              key={index} 
+              ref={(el) => sectionRefs.current[index] = el}
+              className={`bg-white rounded-2xl shadow-lg p-6 border-2 transition-all duration-200 cursor-pointer ${
+                activeSection === index 
+                  ? 'border-blue-500 shadow-xl ring-2 ring-blue-200' 
+                  : 'border-blue-100 hover:border-blue-300'
+              }`}
+              onClick={() => handleSectionClick(index)}
+              tabIndex={0}
+              onFocus={() => setActiveSection(index)}
+            >
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold text-blue-600">섹션 {index + 1}</h2>
+                <h2 className="text-2xl font-bold text-blue-600">
+                  {activeSection === index && '📌 '}섹션 {index + 1}
+                  {activeSection === index && ' (활성화됨)'}
+                </h2>
                 <div className="w-8 h-8 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full flex items-center justify-center text-white font-bold">
                   {index + 1}
                 </div>
@@ -603,6 +618,7 @@ function App() {
                       type="text"
                       value={section.word}
                       onChange={(e) => handleWordChange(index, e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
                       placeholder="영어나 한국어 단어/문장을 입력하세요"
                       className="w-full px-4 py-3 border-2 border-blue-200 rounded-lg text-lg focus:outline-none focus:border-blue-400 transition-colors"
                     />
@@ -678,6 +694,7 @@ function App() {
                             type="text"
                             placeholder="추가 뜻을 직접 입력하세요"
                             className="w-full px-3 py-2 border-2 border-green-200 rounded-lg text-sm focus:outline-none focus:border-green-400 transition-colors"
+                            onClick={(e) => e.stopPropagation()}
                             onKeyPress={(e) => {
                               if (e.key === 'Enter') {
                                 const input = e.target as HTMLInputElement;
@@ -704,23 +721,19 @@ function App() {
 
                 {/* Right Side - Image Upload */}
                 <div className="space-y-4">
-                  <div className="bg-purple-50 rounded-xl p-4">
-                    <p className="text-sm font-semibold text-purple-700 mb-3">🖼️ 이미지 추가</p>
-                    {!section.image ? (
-                      <div 
-                        className={`border-3 border-dashed border-purple-300 rounded-xl p-8 text-center bg-white transition-colors ${!isCapturing ? 'hover:bg-purple-25 cursor-pointer' : ''}`}
-                        onPaste={(e) => handleImagePaste(index, e)}
-                        onClick={!isCapturing ? () => fileInputRefs.current[index]?.click() : undefined}
-                        onFocus={() => setFocusedSection(index)}
-                        onMouseEnter={() => setFocusedSection(index)}
-                        tabIndex={0}
-                      >
+                  {section.image === null ? (
+                    <div
+                      className="border-2 border-dashed border-purple-300 rounded-xl p-8 text-center bg-purple-50 hover:bg-purple-100 transition-colors cursor-pointer"
+                      onClick={() => !isCapturing && fileInputRefs.current[index]?.click()}
+                      onPaste={(e) => handleImagePaste(index, e)}
+                    >
+                      <div className="flex flex-col items-center">
                         <Upload className="mx-auto mb-2 text-purple-400" size={32} />
                         <p className="text-purple-600 font-medium">
                           {!isCapturing ? (
                             <>
-                              클릭해서 파일 선택하거나<br />
-                              Ctrl+V로 이미지를 붙여넣기 하세요
+                              파일 선택하거나<br />
+                              섹션 클릭 후 Ctrl+V로 붙여넣기
                             </>
                           ) : (
                             '이미지 영역'
@@ -737,24 +750,24 @@ function App() {
                           }}
                         />
                       </div>
-                    ) : (
-                      <div className="relative">
-                        <img
-                          src={section.image}
-                          alt="업로드된 이미지"
-                          className="w-full h-64 object-cover rounded-xl shadow-md"
-                        />
-                        {!isCapturing && (
-                          <button
-                            onClick={() => handleImageDelete(index)}
-                            className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white p-2 rounded-full shadow-lg transition-colors"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <img
+                        src={section.image}
+                        alt="업로드된 이미지"
+                        className="w-full h-64 object-cover rounded-xl shadow-md"
+                      />
+                      {!isCapturing && (
+                        <button
+                          onClick={() => handleImageDelete(index)}
+                          className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white p-2 rounded-full shadow-lg transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {/* 이미지 설명 입력란 */}
                   <div className="bg-yellow-50 rounded-xl p-4">
@@ -764,6 +777,7 @@ function App() {
                     <textarea
                       value={section.description}
                       onChange={(e) => handleDescriptionChange(index, e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
                       placeholder="이미지에 대한 설명이나 학습 포인트를 적어주세요"
                       className="w-full px-3 py-2 border-2 border-yellow-200 rounded-lg text-sm focus:outline-none focus:border-yellow-400 transition-colors resize-none"
                       rows={3}
