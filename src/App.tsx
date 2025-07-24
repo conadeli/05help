@@ -282,6 +282,7 @@ function App() {
   const [showCelebration, setShowCelebration] = useState<boolean>(false);
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+  const [focusedSection, setFocusedSection] = useState<number | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -292,47 +293,98 @@ function App() {
     // 기존 음성 중지
     window.speechSynthesis.cancel();
     
-    // 음성 목록을 가져와서 미국 여자 목소리 찾기
-    const voices = window.speechSynthesis.getVoices();
-    let selectedVoice = null;
-    
-    // 미국 여자 목소리 우선순위로 찾기
-    const preferredVoices = [
-      'Microsoft Zira - English (United States)',
-      'Google US English Female',
-      'Alex',
-      'Samantha'
-    ];
-    
-    for (const preferred of preferredVoices) {
-      selectedVoice = voices.find(voice => 
-        voice.name.includes(preferred) || 
-        (voice.lang.includes('en-US') && voice.name.toLowerCase().includes('female'))
-      );
-      if (selectedVoice) break;
-    }
-    
-    // 미국 영어 목소리가 없으면 영어 목소리 중 아무거나
-    if (!selectedVoice) {
-      selectedVoice = voices.find(voice => voice.lang.startsWith('en'));
-    }
-    
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'en-US';
-    utterance.rate = rate;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
-    
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
-    }
-    
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-    
-    window.speechSynthesis.speak(utterance);
+    // 음성 목록 로드 대기
+    const loadVoices = () => {
+      return new Promise<SpeechSynthesisVoice[]>((resolve) => {
+        let voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          resolve(voices);
+        } else {
+          window.speechSynthesis.onvoiceschanged = () => {
+            voices = window.speechSynthesis.getVoices();
+            resolve(voices);
+          };
+        }
+      });
+    };
+
+    loadVoices().then((voices) => {
+      let selectedVoice = null;
+      
+      // 젊은 미국 여성 목소리 우선순위로 찾기
+      const preferredVoices = [
+        'Microsoft Aria Online (Natural) - English (United States)',
+        'Microsoft Jenny Online (Natural) - English (United States)',
+        'Microsoft Emma Online (Natural) - English (United States)',
+        'Microsoft Olivia Online (Natural) - English (United States)',
+        'Microsoft Ava Online (Natural) - English (United States)',
+        'Google US English Female',
+        'Samantha',
+        'Allison',
+        'Ava',
+        'Emma',
+        'Olivia',
+        'Zoe',
+        'Chloe'
+      ];
+      
+      // 우선순위 목록에서 찾기
+      for (const preferred of preferredVoices) {
+        selectedVoice = voices.find(voice => 
+          voice.name.includes(preferred) || voice.name === preferred
+        );
+        if (selectedVoice) break;
+      }
+      
+      // 젊은 여성 목소리 키워드로 찾기
+      if (!selectedVoice) {
+        const youngFemaleKeywords = ['aria', 'jenny', 'emma', 'olivia', 'ava', 'zoe', 'chloe', 'allison', 'natural', 'neural', 'female', 'woman', 'girl'];
+        selectedVoice = voices.find(voice => 
+          voice.lang.includes('en-US') && 
+          youngFemaleKeywords.some(keyword => 
+            voice.name.toLowerCase().includes(keyword)
+          )
+        );
+      }
+      
+      // 미국 영어 여성 목소리 찾기
+      if (!selectedVoice) {
+        selectedVoice = voices.find(voice => 
+          voice.lang.includes('en-US') && 
+          (voice.name.toLowerCase().includes('female') || 
+           voice.name.toLowerCase().includes('woman'))
+        );
+      }
+      
+      // 미국 영어 목소리 중 아무거나
+      if (!selectedVoice) {
+        selectedVoice = voices.find(voice => voice.lang.startsWith('en-US'));
+      }
+      
+      // 영어 목소리 중 아무거나
+      if (!selectedVoice) {
+        selectedVoice = voices.find(voice => voice.lang.startsWith('en'));
+      }
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      utterance.rate = rate;
+      utterance.pitch = 1.2; // 더 높은 톤으로 20대 젊은 여성 느낌
+      utterance.volume = 1.0;
+      
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+        console.log('선택된 음성:', selectedVoice.name); // 디버깅용
+      }
+      
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
+      utterance.onerror = () => setIsSpeaking(false);
+      
+      window.speechSynthesis.speak(utterance);
+    });
   };
+    
 
   const stopSpeaking = () => {
     window.speechSynthesis.cancel();
@@ -455,20 +507,20 @@ function App() {
   React.useEffect(() => {
     const handleGlobalPaste = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === 'v') {
-        // 현재 포커스된 섹션 찾기 (간단히 첫 번째 빈 섹션 사용)
-        const emptyIndex = sections.findIndex(section => !section.image);
-        if (emptyIndex !== -1) {
+        // 포커스된 섹션이 있으면 그 섹션에, 없으면 첫 번째 빈 섹션에
+        const targetIndex = focusedSection !== null ? focusedSection : sections.findIndex(section => !section.image);
+        if (targetIndex !== -1) {
           // 클립보드에서 이미지 가져오기
           navigator.clipboard.read().then(items => {
             for (const item of items) {
               if (item.types.includes('image/png') || item.types.includes('image/jpeg')) {
                 item.getType('image/png').then(blob => {
                   const file = new File([blob], 'pasted-image.png', { type: 'image/png' });
-                  handleImageUpload(emptyIndex, file);
+                  handleImageUpload(targetIndex, file);
                 }).catch(() => {
                   item.getType('image/jpeg').then(blob => {
                     const file = new File([blob], 'pasted-image.jpg', { type: 'image/jpeg' });
-                    handleImageUpload(emptyIndex, file);
+                    handleImageUpload(targetIndex, file);
                   });
                 });
                 break;
@@ -483,7 +535,7 @@ function App() {
 
     document.addEventListener('keydown', handleGlobalPaste);
     return () => document.removeEventListener('keydown', handleGlobalPaste);
-  }, [sections]);
+  }, [sections, focusedSection]);
 
   const handleReset = () => {
     setSections(Array(5).fill(null).map(() => ({ word: '', meaning: '', meanings: [], image: null, description: '' })));
@@ -659,6 +711,8 @@ function App() {
                         className={`border-3 border-dashed border-purple-300 rounded-xl p-8 text-center bg-white transition-colors ${!isCapturing ? 'hover:bg-purple-25 cursor-pointer' : ''}`}
                         onPaste={(e) => handleImagePaste(index, e)}
                         onClick={!isCapturing ? () => fileInputRefs.current[index]?.click() : undefined}
+                        onFocus={() => setFocusedSection(index)}
+                        onMouseEnter={() => setFocusedSection(index)}
                         tabIndex={0}
                       >
                         <Upload className="mx-auto mb-2 text-purple-400" size={32} />
