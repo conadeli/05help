@@ -5,6 +5,7 @@ import html2canvas from 'html2canvas';
 interface SectionData {
   word: string;
   meaning: string;
+  meanings: string[];
   image: string | null;
 }
 
@@ -207,27 +208,27 @@ const translateText = async (text: string, isKorean: boolean = false): Promise<s
     if (meanings.length > 0) {
       // 중복 제거 및 정리
       const uniqueMeanings = [...new Set(meanings)];
-      return uniqueMeanings.slice(0, 5).join(' / '); // 최대 5개까지만 표시
+      return uniqueMeanings.slice(0, 5); // 최대 5개까지만 반환 (배열로)
     }
     
-    throw new Error('번역 실패');
+    return [];
   } catch (error) {
     console.error('번역 오류:', error);
-    return '번역할 수 없습니다. 인터넷 연결을 확인해주세요.';
+    return ['번역할 수 없습니다. 인터넷 연결을 확인해주세요.'];
   }
 };
 
 function App() {
   const [studentName, setStudentName] = useState<string>('');
   const [sections, setSections] = useState<SectionData[]>(
-    Array(5).fill(null).map(() => ({ word: '', meaning: '', image: null }))
+    Array(5).fill(null).map(() => ({ word: '', meaning: '', meanings: [], image: null }))
   );
   const pageRef = useRef<HTMLDivElement>(null);
   const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const handleWordChange = (index: number, word: string) => {
     const newSections = [...sections];
-    newSections[index] = { ...newSections[index], word, meaning: '' };
+    newSections[index] = { ...newSections[index], word, meaning: '', meanings: [] };
     setSections(newSections);
   };
 
@@ -243,13 +244,21 @@ function App() {
     
     try {
       const isKorean = isKoreanText(word);
-      const meaning = await translateText(word, isKorean);
+      const meanings = await translateText(word, isKorean);
       const updatedSections = [...sections];
-      updatedSections[index] = { ...updatedSections[index], meaning };
+      updatedSections[index] = { 
+        ...updatedSections[index], 
+        meanings: Array.isArray(meanings) ? meanings : [meanings],
+        meaning: Array.isArray(meanings) ? meanings.join(' / ') : meanings
+      };
       setSections(updatedSections);
     } catch (error) {
       const errorSections = [...sections];
-      errorSections[index] = { ...errorSections[index], meaning: '번역 중 오류가 발생했습니다.' };
+      errorSections[index] = { 
+        ...errorSections[index], 
+        meanings: ['번역 중 오류가 발생했습니다.'],
+        meaning: '번역 중 오류가 발생했습니다.' 
+      };
       setSections(errorSections);
     }
   };
@@ -340,6 +349,18 @@ function App() {
     setSections(newSections);
   };
 
+  const removeMeaning = (sectionIndex: number, meaningIndex: number) => {
+    const newSections = [...sections];
+    const updatedMeanings = [...newSections[sectionIndex].meanings];
+    updatedMeanings.splice(meaningIndex, 1);
+    newSections[sectionIndex] = {
+      ...newSections[sectionIndex],
+      meanings: updatedMeanings,
+      meaning: updatedMeanings.join(' / ')
+    };
+    setSections(newSections);
+  };
+
   const handleScreenshot = async () => {
     if (!pageRef.current) return;
     
@@ -394,7 +415,7 @@ function App() {
   }, [sections]);
 
   const handleReset = () => {
-    setSections(Array(5).fill(null).map(() => ({ word: '', meaning: '', image: null })));
+    setSections(Array(5).fill(null).map(() => ({ word: '', meaning: '', meanings: [], image: null })));
     window.speechSynthesis.cancel();
   };
 
@@ -473,9 +494,20 @@ function App() {
 
                   {section.meaning && (
                     <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
-                      <p className="text-lg font-semibold text-green-700">
-                        📖 {isKoreanText(section.word) ? '영어' : '뜻'}: {section.meaning}
+                      <p className="text-sm font-semibold text-green-700 mb-2">
+                        📖 {isKoreanText(section.word) ? '영어' : '뜻'}: (클릭하면 제거됩니다)
                       </p>
+                      <div className="flex flex-wrap gap-2">
+                        {section.meanings.map((meaning, meaningIndex) => (
+                          <button
+                            key={meaningIndex}
+                            onClick={() => removeMeaning(index, meaningIndex)}
+                            className="bg-green-100 hover:bg-red-100 hover:line-through text-green-800 hover:text-red-800 px-3 py-1 rounded-lg text-sm font-medium transition-all duration-200 border border-green-300 hover:border-red-300"
+                          >
+                            {meaning}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   )}
 
@@ -483,7 +515,7 @@ function App() {
                     <p className="text-sm font-semibold text-orange-700 mb-3">🎵 듣기 옵션</p>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => handleSpeak(getTextForSpeech(index), 0.7)}
+                        onClick={() => handleSpeak(getTextForSpeech(index), 0.5)}
                         disabled={!getTextForSpeech(index)}
                         className="flex-1 bg-orange-300 hover:bg-orange-400 disabled:bg-gray-300 text-white font-bold py-2 px-3 rounded-lg transition-colors duration-200 text-sm"
                       >
